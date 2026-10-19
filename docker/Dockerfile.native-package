@@ -1,0 +1,47 @@
+FROM registry.access.redhat.com/ubi9-micro:9.7
+
+# Automatically set by Docker BuildKit to "amd64" or "arm64"
+ARG TARGETARCH
+
+WORKDIR /app
+
+# ubi9-micro has no shadow-utils, so the runtime user is one /etc/passwd line.
+RUN echo 'floci:x:1001:0:Floci:/app:/sbin/nologin' >> /etc/passwd \
+    && mkdir -p /app/data \
+    && chown -R 1001:root /app \
+    && chmod -R g+rwX /app
+
+VOLUME /app/data
+
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chmod=755 docker/localstack-parity.sh docker/healthcheck.sh /usr/local/bin/
+
+ARG VERSION=latest
+ENV FLOCI_VERSION=${VERSION}
+ENV FLOCI_STORAGE_PERSISTENT_PATH=/app/data
+COPY --chmod=755 --chown=1001:root native/${TARGETARCH}/ /app/
+
+LABEL org.opencontainers.image.title="Floci" \
+      org.opencontainers.image.description="Local AWS emulator — open-source alternative to LocalStack Community" \
+      org.opencontainers.image.url="https://floci.io" \
+      org.opencontainers.image.source="https://github.com/floci-io/floci" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="Floci" \
+      description="Local AWS emulator — open-source alternative to LocalStack Community" \
+      io.k8s.description="Local AWS emulator — open-source alternative to LocalStack Community" \
+      io.k8s.display-name="Floci" \
+      io.openshift.expose-services="4566:tcp" \
+      io.openshift.tags="floci aws-emulator" \
+      maintainer="Floci <https://github.com/floci-io/floci>" \
+      name="floci/floci" \
+      summary="Local AWS emulator — open-source alternative to LocalStack Community" \
+      url="https://floci.io" \
+      vendor="Floci"
+
+EXPOSE 4566
+
+HEALTHCHECK --interval=5s --timeout=3s --retries=5 CMD ["/usr/local/bin/healthcheck.sh"]
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# A published port needs 0.0.0.0 inside the container, which Floci only accepts with explicit consent.
+CMD ["/app/application", "-Dquarkus.http.host=0.0.0.0", "-Dfloci.security.allow-unsafe-network-exposure=true"]
